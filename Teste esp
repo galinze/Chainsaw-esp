@@ -3,229 +3,135 @@ local RunService = game:GetService("RunService")
 local StarterGui = game:GetService("StarterGui")
 local LocalPlayer = Players.LocalPlayer
 
-local CONFIG = {
-    NamePatterns = { "heart", "devil heart", "find heart" },
-    RecentOnlySeconds = 10,
-    KeepSeconds = 1800,
-    DistanceText = true,
-    ShowNotification = true,
-    FoldersToWatch = {
-        "workspace.Items",
-        "workspace.Drops",
-        "workspace.Interactable",
-        "workspace.IgnoreList",
-        "workspace.Spawns",
-        "workspace.Collectibles",
-        "workspace.Loot",
-    },
-    Highlight = {
-        FillColor = Color3.fromRGB(255, 64, 64),
-        FillTransparency = 0.5,
-        OutlineColor = Color3.fromRGB(255, 255, 255),
-        OutlineTransparency = 0.0,
-    },
-    Billboard = {
-        TextColor3 = Color3.fromRGB(255, 255, 255),
-        BgColor3 = Color3.fromRGB(30, 0, 0),
-    },
-}
+local Names = {"heart", "find heart", "devil heart"}
+local Keep = 1800
+local Notify = true
+local ShowDist = true
 
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "HEART_ESP_UI"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+local Gui = Instance.new("ScreenGui")
+Gui.Name = "UNIVERSAL_HEART_ESP"
+Gui.ResetOnSpawn = false
+Gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
-local toggle = Instance.new("TextButton")
-toggle.Name = "ToggleESP"
-toggle.Size = UDim2.fromOffset(90, 28)
-toggle.Position = UDim2.new(0, 10, 0, 10)
-toggle.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-toggle.AutoButtonColor = true
-toggle.Text = "ESP: ON"
-toggle.TextColor3 = Color3.fromRGB(255,255,255)
-toggle.Font = Enum.Font.GothamBold
-toggle.TextSize = 14
-toggle.Parent = screenGui
+local Btn = Instance.new("TextButton")
+Btn.Size = UDim2.fromOffset(100,30)
+Btn.Position = UDim2.new(0,10,0,10)
+Btn.BackgroundColor3 = Color3.fromRGB(60,60,60)
+Btn.TextColor3 = Color3.new(1,1,1)
+Btn.Text = "ESP: ON"
+Btn.Font = Enum.Font.GothamBold
+Btn.TextSize = 14
+Btn.Parent = Gui
 
-local espEnabled = true
-toggle.MouseButton1Click:Connect(function()
-    espEnabled = not espEnabled
-    toggle.Text = espEnabled and "ESP: ON" or "ESP: OFF"
+local Enabled = true
+Btn.MouseButton1Click:Connect(function()
+	Enabled = not Enabled
+	Btn.Text = Enabled and "ESP: ON" or "ESP: OFF"
 end)
 
-local function lower(s)
-    return string.lower(tostring(s or ""))
+local Tracked = {}
+
+local function match(n)
+	n = string.lower(tostring(n))
+	for _,v in ipairs(Names) do
+		if string.find(n,v,1,true) then return true end
+	end
 end
 
-local function matchesNamePatterns(name)
-    local ln = lower(name)
-    for _, pat in ipairs(CONFIG.NamePatterns) do
-        if string.find(ln, lower(pat), 1, true) then
-            return true
-        end
-    end
-    return false
+local function isRenderable(inst)
+	return inst:IsA("BasePart") or inst:IsA("UnionOperation") or inst:IsA("MeshPart")
 end
 
-local function isBaseRenderable(inst)
-    return inst:IsA("BasePart") or inst:IsA("MeshPart") or inst:IsA("Part") or inst:IsA("UnionOperation")
+local function findPart(obj)
+	if obj:IsA("Model") then
+		return obj.PrimaryPart or obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChildWhichIsA("BasePart")
+	elseif isRenderable(obj) then
+		return obj
+	end
 end
 
-local function pickAdornee(inst)
-    if inst:IsA("Model") then
-        if inst.PrimaryPart then return inst.PrimaryPart end
-        local hrp = inst:FindFirstChild("HumanoidRootPart")
-        if hrp then return hrp end
-        for _, d in ipairs(inst:GetDescendants()) do
-            if isBaseRenderable(d) then return d end
-        end
-        return inst
-    end
-    if isBaseRenderable(inst) then return inst end
-    return nil
+local function track(inst)
+	if Tracked[inst] then return end
+	local p = findPart(inst)
+	if not p then return end
+	local t = os.clock()
+	local h = Instance.new("Highlight")
+	h.Adornee = inst
+	h.FillColor = Color3.fromRGB(255,60,60)
+	h.FillTransparency = 0.5
+	h.OutlineColor = Color3.fromRGB(255,255,255)
+	h.Parent = inst
+	local bb = Instance.new("BillboardGui")
+	bb.Size = UDim2.fromOffset(200,50)
+	bb.AlwaysOnTop = true
+	bb.StudsOffset = Vector3.new(0,3,0)
+	bb.Parent = p
+	local f = Instance.new("Frame",bb)
+	f.Size = UDim2.fromScale(1,1)
+	f.BackgroundColor3 = Color3.fromRGB(40,0,0)
+	f.BackgroundTransparency = 0.2
+	local txt = Instance.new("TextLabel",f)
+	txt.Size = UDim2.fromScale(1,1)
+	txt.BackgroundTransparency = 1
+	txt.TextColor3 = Color3.fromRGB(255,255,255)
+	txt.TextStrokeTransparency = 0.4
+	txt.Font = Enum.Font.GothamBold
+	txt.TextScaled = true
+	Tracked[inst] = {added=t,bb=bb,h=h,text=txt,part=p}
+	if Notify then
+		pcall(function()
+			StarterGui:SetCore("SendNotification",{Title="💖 ESP",Text="Item detectado: "..inst.Name,Duration=3})
+		end)
+	end
 end
 
-local tracked = {}
-
-local function destroyTrack(inst)
-    local t = tracked[inst]
-    if t then
-        if t.bb and t.bb.Parent then t.bb:Destroy() end
-        if t.hl and t.hl.Parent then t.hl:Destroy() end
-        tracked[inst] = nil
-    end
-end
-
-local function addESP(inst)
-    if tracked[inst] then return end
-    local adornee = pickAdornee(inst)
-    if not adornee then return end
-    local now = os.clock()
-    local hl = Instance.new("Highlight")
-    hl.Adornee = inst:IsA("Model") and inst or adornee.Parent
-    hl.FillColor = CONFIG.Highlight.FillColor
-    hl.FillTransparency = CONFIG.Highlight.FillTransparency
-    hl.OutlineColor = CONFIG.Highlight.OutlineColor
-    hl.OutlineTransparency = CONFIG.Highlight.OutlineTransparency
-    hl.Name = "HEART_ESP_HL"
-    hl.Parent = inst
-    local bb = Instance.new("BillboardGui")
-    bb.Name = "HEART_ESP_BB"
-    bb.AlwaysOnTop = true
-    bb.Size = UDim2.fromOffset(200, 50)
-    bb.StudsOffset = Vector3.new(0, 3, 0)
-    bb.Parent = adornee
-    local bg = Instance.new("Frame")
-    bg.Size = UDim2.fromScale(1, 1)
-    bg.BackgroundColor3 = CONFIG.Billboard.BgColor3
-    bg.BackgroundTransparency = 0.25
-    bg.BorderSizePixel = 0
-    bg.Parent = bb
-    local txt = Instance.new("TextLabel")
-    txt.Size = UDim2.fromScale(1,1)
-    txt.BackgroundTransparency = 1
-    txt.TextColor3 = CONFIG.Billboard.TextColor3
-    txt.TextStrokeTransparency = 0.5
-    txt.Font = Enum.Font.GothamBold
-    txt.TextScaled = true
-    txt.Parent = bg
-    tracked[inst] = { addedAt = now, hl = hl, bb = bb, label = txt, adornee = adornee }
-    if CONFIG.ShowNotification then
-        pcall(function()
-            StarterGui:SetCore("SendNotification", {
-                Title = "Heart ESP",
-                Text = ("Detectado: %s"):format(inst.Name),
-                Duration = 3
-            })
-        end)
-    end
-end
-
-local function looksLikeHeart(inst)
-    if not matchesNamePatterns(inst.Name) then return false end
-    if inst:IsA("Model") then
-        return pickAdornee(inst) ~= nil
-    end
-    return isBaseRenderable(inst)
+local function clean(inst)
+	local t = Tracked[inst]
+	if t then
+		if t.bb then t.bb:Destroy() end
+		if t.h then t.h:Destroy() end
+		Tracked[inst]=nil
+	end
 end
 
 RunService.RenderStepped:Connect(function()
-    if not espEnabled then
-        for inst, t in pairs(tracked) do
-            if t.hl then t.hl.Enabled = false end
-            if t.bb then t.bb.Enabled = false end
-        end
-        return
-    end
-    local char = LocalPlayer.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    for inst, t in pairs(tracked) do
-        if not inst or not inst.Parent then
-            destroyTrack(inst)
-        else
-            if t.hl then t.hl.Enabled = true end
-            if t.bb then t.bb.Enabled = true end
-            local elapsed = os.clock() - t.addedAt
-            if CONFIG.KeepSeconds > 0 and elapsed > CONFIG.KeepSeconds then
-                destroyTrack(inst)
-            else
-                local distStr = ""
-                if CONFIG.DistanceText and hrp and t.adornee then
-                    local d = (t.adornee.Position - hrp.Position).Magnitude
-                    distStr = ("  |  %.0f studs"):format(d)
-                end
-                t.label.Text = ("❤️ %s  |  +%.1fs%s"):format(inst.Name, elapsed, distStr)
-            end
-        end
-    end
+	if not Enabled then
+		for i,v in pairs(Tracked) do
+			if v.h then v.h.Enabled=false end
+			if v.bb then v.bb.Enabled=false end
+		end
+		return
+	end
+	local hrp = Players.LocalPlayer.Character and Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+	for i,v in pairs(Tracked) do
+		if not i or not i.Parent then
+			clean(i)
+		else
+			if v.h then v.h.Enabled=true end
+			if v.bb then v.bb.Enabled=true end
+			if Keep>0 and os.clock()-v.added>Keep then
+				clean(i)
+			elseif ShowDist and hrp and v.part then
+				local d = (v.part.Position-hrp.Position).Magnitude
+				v.text.Text = string.format("💖 %s | %.0f studs",i.Name,d)
+			else
+				v.text.Text = "💖 "..i.Name
+			end
+		end
+	end
 end)
 
-local function tryAttach(inst, recentSpawn)
-    if looksLikeHeart(inst) then
-        addESP(inst)
-    elseif inst:IsA("Model") or inst:IsA("Folder") then
-        for _, d in ipairs(inst:GetDescendants()) do
-            if looksLikeHeart(d) then
-                addESP(inst:IsA("Model") and inst or d)
-                break
-            end
-        end
-    end
-end
-
-for _, path in ipairs(CONFIG.FoldersToWatch) do
-    local ok, folder = pcall(function()
-        local node = workspace
-        for seg in string.gmatch(path, "[^%.]+") do
-            if seg == "workspace" then
-                node = workspace
-            else
-                node = (node and node:FindFirstChild(seg)) or nil
-            end
-            if not node then break end
-        end
-        return node
-    end)
-    if ok and folder and folder.Parent then
-        for _, c in ipairs(folder:GetDescendants()) do
-            tryAttach(c, false)
-        end
-        folder.DescendantAdded:Connect(function(d)
-            if not espEnabled then return end
-            tryAttach(d, true)
-        end)
-    end
+local function scan(obj)
+	if match(obj.Name) and findPart(obj) then track(obj) end
+	for _,d in ipairs(obj:GetDescendants()) do
+		if match(d.Name) and findPart(d) then track(d) end
+	end
 end
 
 workspace.DescendantAdded:Connect(function(d)
-    if not espEnabled then return end
-    if matchesNamePatterns(d.Name) then
-        tryAttach(d, true)
-    end
+	if Enabled and match(d.Name) then track(d) end
 end)
 
-for _, d in ipairs(workspace:GetDescendants()) do
-    if matchesNamePatterns(d.Name) then
-        tryAttach(d, false)
-    end
+for _,d in ipairs(workspace:GetDescendants()) do
+	if match(d.Name) then track(d) end
 end
